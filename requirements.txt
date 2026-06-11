@@ -1,0 +1,6 @@
+databento
+pandas
+numpy
+pyarrow
+sortedcontainers
+matplotlib
