@@ -1,33 +1,28 @@
 # OrderFlow Reactor
 
-**Reconstructing the MNQ limit order book from market-by-order data and testing a queueing-theoretic (PDE) model of short-horizon price movement.**
+**Investigating whether queue imbalance in the MNQ limit order book contains economically exploitable predictive information, from L3 reconstruction through a parameter-free queueing model, a depth-signal investigation, and a transaction-cost backtest.**
 
-A fundamental question in market microstructure is how the distribution of liquidity in the limit order book influences the direction of the next price move. This project reconstructs the CME MNQ order book from event-level market-by-order data, measures the relationship between queue imbalance and future price movements, and evaluates a parameter-free queueing-theoretic prediction against real market data.
+A fundamental question in market microstructure is how the distribution of liquidity in the limit order book influences the direction of the next price move, and whether any resulting predictive signal survives realistic execution costs. This project reconstructs the CME MNQ order book from event-level market-by-order data, measures the relationship between queue imbalance and future price movements, tests it against a parameter-free queueing-theoretic prediction, investigates whether deeper book liquidity explains the residual, measures how long the signal persists, and finally evaluates whether it can be monetized after crossing the spread.
 
-`P(up before down | book state)` is the probability that the mid-price ticks up before it ticks down, given the current order-book state. If this probability can be estimated from observable liquidity, it provides actionable information for market makers deciding how to quote, manage inventory, and position within the limit order book.
+`P(up before down | book state)` is the probability that the mid-price ticks up before it ticks down, given the current order-book state. This is the object studied throughout: first as a prediction problem, then as a trading signal.
+
+The framing is deliberately a *research* question ("does imbalance carry economically exploitable information?"), not a claim to a profitable strategy. The honest answer found here is: the signal is real, statistically robust, and persistent, but does **not** survive realistic taker execution costs by a wide margin.
 
 ---
 
 ## Key findings
 
-**Takeaway:** The independent-queue PDE gets the direction and crossing point right but systematically overstates confidence. The empirical curve is a stable, flattened version of the theoretical prediction across multiple MNQ sessions.
+**Takeaway:** Queue imbalance carries real, stable, out-of-sample directional information in MNQ. A parameter-free queueing (PDE) model captures its shape but systematically overstates confidence. Deeper book liquidity adds independent predictive value but does not explain that gap. The signal's edge is realized within ~5–10 book updates and amounts to 0.13–0.23 ticks per trade, which does **not** survive the ~1.8-tick round-trip spread cost. The information is genuine but not economically exploitable by crossing the spread.
 
-**Data & engineering:**
-- Reconstructed 100M+ order-book events from CME MNQ futures into a validated L3 book.
-- Generated 88M+ first-passage up/down labels across four trading sessions.
-
-**Empirical findings:**
-- Reproduced the known monotonic relationship between queue imbalance and the direction of the next price move on CME futures.
-- Compared the empirical curve against a parameter-free queueing/PDE model (the hitting-probability / harmonic-function prediction).
-- The model gets the direction and the 50/50 crossing point right, but systematically overstates directional certainty — mean absolute deviation 0.14, up to 0.24 in extreme-imbalance regimes.
-- The gap is stable across all four sessions (per-bin std < 0.011 in populated bins).
-
-### Contribution beyond prior work
-
-The imbalance–direction relationship is already established and serves as a benchmark. This project contributes:
-- An independent full-L3 reconstruction on CME MNQ futures.
-- Verification that the empirical imbalance–direction curve remains highly stable across four MNQ sessions spanning late April to late May 2026, with per-bin standard deviation below 0.011 in populated regions.
-- A comparison of the empirical calibration curve against a parameter-free harmonic-function / hitting-probability prediction, quantifying a persistent flattening relative to theory.
+The eight linked findings, each motivating the next:
+1. **Reconstruction**: full L3 book rebuilt from 100M+ MBO events; 46.7M-record session validated with zero anomalies.
+2. **Empirical curve**: the imbalance→direction relationship, reproduced on CME futures.
+3. **Multi-day stability**: that curve is stable across four sessions (per-bin std < 0.011).
+4. **PDE gap**: the parameter-free queueing model is systematically too steep (MAE 0.14).
+5. **Depth signal**: deeper (levels 2–10) imbalance carries a robust *contrarian* signal beyond L1.
+6. **Depth vs. gap**: depth improves out-of-sample forecasts but does **not** explain the PDE gap.
+7. **Edge persistence**: the signal's directional edge is realized within ~5–10 book updates.
+8. **Execution**: gross edge 0.13–0.23 ticks/trade does not survive the ~1.8-tick spread; break-even cost ≈ 0.13–0.23 ticks.
 
 ### Scale
 
@@ -51,26 +46,34 @@ The imbalance–direction relationship is already established and serves as a be
 ## Repository
 
 ```
-README.md          Project overview and results
-requirements.txt   Dependencies
-book.py            L3 order-book reconstruction + validation
-record_states.py   State extraction (+ L10 depth)
-label.py           First-passage labeling
-calibrate.py       Empirical calibration curve
-overlay.py         Empirical vs. theory (single session)
-overlay_multi.py   Per-day curves, mean/band, gap table
-batch.py           Multi-day pipeline
-correlation.py     Queue-increment correlation
-figures/           Project figures
+README.md           Project overview and results
+requirements.txt    Dependencies
+book.py             L3 order-book reconstruction + validation
+record_states.py    State extraction (+ L10 depth)
+label.py            First-passage labeling
+calibrate.py        Empirical calibration curve
+overlay.py          Empirical vs. theory (single session)
+overlay_multi.py    Per-day curves, mean/band, gap table
+batch.py            Multi-day pipeline
+correlation.py      Queue-increment correlation
+depth_residual.py   Depth signal within fixed L1 bins (contrarian finding)
+depth_robustness.py Multi-day robustness of the depth signal
+phase2_brier.py     L1 vs L1+depth out-of-sample Brier (leave-one-day-out)
+depth_vs_pde.py     PDE vs L1 vs L1+depth; depth-conditioned residuals
+edge_decay.py       Signal persistence vs holding horizon
+backtest_stage1.py  Gross directional value (threshold sweep, no costs)
+backtest_stage2.py  Net of spread cost; break-even transaction cost
+thickness_test.py   Total book volume (thickness) conditioning test (null)
+figures/            Project figures
 ```
 
-**Pipeline:** raw `.dbn.zst` → `record_states` → `label` → `calibrate` / `overlay`. Multi-day: `batch` → `overlay_multi`.
+**Pipeline:** raw `.dbn.zst` → `record_states` → `label` → `calibrate` / `overlay`. Multi-day: `batch` → `overlay_multi`. Depth: `depth_residual` → `depth_robustness` → `phase2_brier` → `depth_vs_pde`. Trading: `edge_decay` → `backtest_stage1` → `backtest_stage2`.
 
 ---
 
 ## 1. Research question
 
-Electronic markets can be viewed as queueing systems. Orders are constantly added, canceled, and executed, and prices move when liquidity at the best bid or ask is exhausted. Previous studies have found that queue imbalance — the relative size of the bid and ask queues — contains information about the direction of the next price move. Queueing models go a step further by providing a closed-form prediction for that probability using only the sizes of the two queues.
+Electronic markets can be viewed as queueing systems. Orders are constantly added, canceled, and executed, and prices move when liquidity at the best bid or ask is exhausted. Previous studies have found that queue imbalance (the relative size of the bid and ask queues) contains information about the direction of the next price move. Queueing models go a step further by providing a closed-form prediction for that probability using only the sizes of the two queues.
 
 This project studies two questions using CME MNQ futures data:
 
@@ -91,7 +94,7 @@ The first question is already well understood in the literature and serves mainl
 | Period | 2026-04-27, 2026-05-05, 2026-05-13, 2026-05-21 |
 | Provider | Databento |
 
-MBO is the most detailed market-data schema available, containing individual order adds, cancels, modifies, and executions keyed by order ID. Top-of-book queue sizes are reconstructed from it. The full ten levels of depth are also reconstructed and stored for the extensions described in §8.
+MBO is the most detailed market-data schema available, containing individual order adds, cancels, modifies, and executions keyed by order ID. Top-of-book queue sizes are reconstructed from it. The full ten levels of depth are also reconstructed and stored, and are used in the depth investigation in §5.
 
 **Data access.** Raw CME MBO data was obtained through Databento and is not redistributed in this repository. Reproducing the analysis requires access to the corresponding MNQ market-by-order datasets.
 
@@ -115,7 +118,7 @@ As a consistency check, active orders were periodically re-aggregated by price l
 
 ### 3.2 Recording book states
 
-The full order book changes millions of times throughout the trading day, so instead of storing every event, a new state is recorded only when the top of the book changes — any change to the best bid or best ask price or size.
+The full order book changes millions of times throughout the trading day, so instead of storing every event, a new state is recorded only when the top of the book changes: any change to the best bid or best ask price or size.
 
 Each recorded state contains:
 - Timestamp
@@ -178,7 +181,7 @@ The empirical calibration curve was compared against the parameter-free queue-de
 
 The model gets the broad picture right. As imbalance increases, both the theory and the data assign a higher probability to an upward move, and both cross the 50% level near balanced queues. In the data, the empirical curve crosses 0.50 at an imbalance of about 0.475.
 
-Where the model falls short is in the strength of the signal. At low imbalance values it predicts probabilities that are too low, and at high imbalance values it predicts probabilities that are too high — the theoretical curve is consistently steeper than the one observed in the data. The same pattern appears across all four sessions: theory sits below the empirical curve when imbalance is less than 0.5 and above it when imbalance is greater than 0.5. The empirical curve is effectively a flatter version of the theoretical one.
+Where the model falls short is in the strength of the signal. At low imbalance values it predicts probabilities that are too low, and at high imbalance values it predicts probabilities that are too high: the theoretical curve is consistently steeper than the one observed in the data. The same pattern appears across all four sessions: theory sits below the empirical curve when imbalance is less than 0.5 and above it when imbalance is greater than 0.5. The empirical curve is effectively a flatter version of the theoretical one.
 
 | Imbalance | Mean P(up) | Std | Theory | Gap |
 |---:|---:|---:|---:|---:|
@@ -202,43 +205,108 @@ The error statistics tell the same story. The mean signed error is only +0.006, 
 | RMSE | 0.156 |
 | Maximum absolute deviation | 0.238 |
 
-The model gets the direction of the relationship right — larger bid queues make upward moves more likely — and places the 50/50 crossing point in roughly the right place. Where it falls short is the strength of the effect: across all four sessions, the theoretical curve is consistently steeper than the empirical one, predicting probabilities more extreme than those seen in the data.
+The model gets the direction of the relationship right (larger bid queues make upward moves more likely) and places the 50/50 crossing point in roughly the right place. Where it falls short is the strength of the effect: across all four sessions, the theoretical curve is consistently steeper than the empirical one, predicting probabilities more extreme than those seen in the data.
+
+The sections below investigate the leading candidate explanation for this gap (deeper book liquidity, §5), then measure how long the signal persists (§6), test whether it survives execution costs (§7), and interpret the residual (§8).
 
 ---
 
-## 5. Interpretation
+## 5. Does deeper liquidity explain the gap?
 
-The most interesting result is not that the theoretical curve misses the data, but *how* it misses. Across all four sessions, the empirical curve is consistently flatter than the independent-queue prediction. The gap is systematic rather than random, suggesting that some aspect of real order-book dynamics is missing from the model.
+The independent-queue model uses only the best bid and ask. A natural hypothesis is that liquidity deeper in the book (levels 2–10) carries information that would explain the too-steep gap. This was investigated in three steps.
 
-One possible explanation is dependence between the bid and ask queues. If both sides of the book tend to grow and shrink together, the probability curve would be pulled toward 0.50, producing the same flattening seen in the data. To test this, the correlation between changes in the best-bid and best-ask queue sizes was measured directly. The result, `corr(Δq_b, Δq_a) ≈ 0.0002` across 27.5 million increments on 2026-05-21, is effectively zero.
+**Depth carries a contrarian signal.** Within each fixed L1-imbalance bin, states were split by their cumulative levels 2–10 imbalance. Holding top-of-book imbalance fixed, states with *more* deep bid support went up *less* often, a stable spread of about −0.04, consistent across all four sessions, with negligible residual L1 difference between the groups (max |L1 gap| < 0.003). Resting deep liquidity behaves as passive/contrarian, not directional: the opposite sign to top-of-book imbalance.
 
-This does not rule out all forms of dependence, but it does rule out the simplest one. The remaining gap is likely driven by assumptions the model makes and the real market does not. Possible candidates include clustered order flow, state-dependent arrival rates, longer-timescale dependence, or information contained deeper in the book than the best bid and ask.
+**Depth improves out-of-sample forecasts.** A leave-one-day-out Brier comparison of an L1-only predictor against an L1+depth predictor (with count-weighted shrinkage of sparse joint buckets) found depth improved held-out forecasts on all four folds, by a small but consistent margin (mean Brier improvement ≈ 0.0005, 100% joint-bucket coverage, log-loss agreeing). The improvement is small (as expected, since depth and L1 overlap) but robust in sign across every fold.
 
-Because the prediction contains no fitted parameters, the residual is easy to interpret. Rather than being absorbed by calibration, the mismatch points directly to features of the market that the model omits. In that sense, the gap is the starting point for the next stage of the project.
+**But depth does not explain the aggregate gap.** Comparing the parameter-free PDE, empirical L1, and empirical L1+depth predictors on the same held-out days shows depth's share of the total Brier improvement over the PDE benchmark. Crucially, conditioning on depth *cannot* change the aggregate empirical curve (by the averaging identity `E[P(up|I,D)|I] = P(up|I)`), so the too-steep gap is a property of `P(up|I)` itself. The depth-conditioned residual plots confirm this: within each L1 bin, low/mid/high depth curves all remain on the *same side* of the PDE (they shift the level, not the slope). Depth is genuinely predictive but does not account for the theoretical discrepancy, which points instead at the PDE's other assumptions: non-Poisson/clustered arrivals, non-Markovian state, or non-stationary intensities.
 
----
+**Total book volume adds nothing.** Depth *imbalance* (a ratio) is distinct from total book *volume* (a magnitude). A separate test asked whether book thickness (total resting size, which the imbalance ratio discards) conditions the signal. Within each imbalance bin, states were split into thin / normal / thick books (by standard-deviation buckets) and P(up) compared, at three depth ranges (level 1, levels 1–2, levels 1–5). The thick-minus-thin spread was near zero and inconsistent in sign at every depth range (mean |spread| < 0.006, never same-sign across bins), and what little appeared was confounded by residual imbalance in the split. Total volume carries no directional information beyond the imbalance ratio: the book's *balance* predicts direction, its *magnitude* does not.
 
-## 6. Related work
+This investigation also illustrates that not all intuitive order-book features are informative: while deeper imbalance carries independent predictive value, total resting volume does not. The direction of liquidity matters more than its magnitude.
 
-The relationship between queue imbalance and the direction of the next price move is already well established. In this project it serves as a benchmark rather than the main result: the goal is not to show that imbalance predicts price movement, but to compare that empirical relationship against a theoretical prediction from a queueing model.
+![PDE vs empirical L1 vs L1+depth, with depth-conditioned curves](figures/depth_vs_pde.png)
 
-- **Gould & Bonart (2015)** — found that queue imbalance predicts short-horizon price direction in Nasdaq stocks, especially for large-tick instruments.
-- **Cont, Stoikov & Talreja (2010)** — modeled the limit order book as a queueing system and linked price moves to the depletion of bid and ask queues.
-- **Cont & de Larrard (2013)** — derived the diffusion-limit hitting-probability framework used here, expressing price-move probabilities in terms of queue sizes.
+![Depth-conditioned residuals against the PDE, by depth tercile](figures/depth_pde_residuals.png)
 
 ---
 
-## 7. Limitations
+## 6. How long does the signal last?
+
+Before treating the signal as tradable, its persistence was measured directly, to choose a holding horizon from data rather than by assumption. For each horizon N (in future book-state updates), the average signed forward return `sign(p̂−0.5)·(mid_{t+N}−mid_t)` was computed over all states, leave-one-day-out.
+
+The cumulative directional edge rises quickly to a peak at N≈5 states and then plateaus flat out to N=200 (≈0.11–0.13 ticks), positive on all four days at every horizon. The move is realized within a few book updates and then held: it neither keeps growing nor reverses. Splitting by signal strength `|p̂−0.5|`, stronger signals carry a much larger edge (≈0.24 ticks for strong vs. ≈0.04 for weak at N=5) and persist just as long, which argues for a high confidence threshold.
+
+This identifies **5–10 book updates** as the natural candidate holding range (the region where most of the cumulative edge is realized), and rules out arbitrarily long horizons.
+
+![Signal edge vs holding horizon: sign-weighted and strength-weighted decay](figures/edge_decay.png)
+
+---
+
+## 7. Does the signal survive execution costs?
+
+A threshold-swept, non-overlapping, leave-one-day-out backtest was run at the 5- and 10-state horizons. A position is opened when `p̂` crosses `0.5 ± τ`, held for N states, then closed; only one position is held at a time.
+
+**Gross directional value is real and threshold-responsive.** Mid-to-mid gross edge rises from 0.13 ticks/trade at τ=0 to 0.23 ticks/trade at the highest threshold (N=5), positive on all four held-out days at every threshold, on 12–18M trades. Higher confidence thresholds produce fewer but higher-quality trades, exactly as expected. N=5 and N=10 give nearly identical per-trade edge, confirming the decay result.
+
+**It does not survive the spread.** Applying the realized round-trip spread cost (crossing half the actual bid–ask spread on entry and exit) makes every configuration deeply unprofitable: net ≈ −1.6 ticks/trade across all thresholds and both horizons. The realized round-trip cost is ≈ 1.8 ticks, reflecting that MNQ trades at a ~2-tick median spread in this sample (17% of states one tick, 59% two ticks): a property of the whole book, not of the signal-selected states.
+
+**Break-even transaction cost.** The strategy's break-even round-trip cost equals its gross edge: 0.13–0.23 ticks. Since a taker pays at minimum ~1 tick (in the 17% of states with a one-tick book) and ~1.8 ticks typically, the signal does **not** survive realistic taker execution costs, by roughly an order of magnitude, under any plausible spread assumption. The information is genuine and statistically robust but not economically exploitable by crossing the spread.
+
+*(Caveat: the ~2-tick spread is taken from the reconstruction; confirming it against a reference BBO feed is a loose end. The economic conclusion holds under any spread ≥ 1 tick, so it does not depend on the exact figure.)*
+
+---
+
+## 8. Interpretation
+
+The most interesting result is not that the theoretical curve misses the data, but *how* it misses. Across all four sessions, the empirical curve is consistently flatter than the independent-queue prediction. The gap is systematic rather than random.
+
+One possible explanation is dependence between the bid and ask queues. If both sides of the book tend to grow and shrink together, the probability curve would be pulled toward 0.50, producing the same flattening. To test this, the correlation between changes in the best-bid and best-ask queue sizes was measured directly: `corr(Δq_b, Δq_a) ≈ 0.0002` across 27.5 million increments (2026-05-21), effectively zero.
+
+This rules out the simplest dependence. Combined with the depth investigation (§5), which showed depth is predictive but does not explain the aggregate gap, the remaining discrepancy is most likely driven by assumptions the model makes and the market does not: clustered/self-exciting order flow, state-dependent arrival rates, longer-timescale dependence, or non-Markovian book state. Because the prediction contains no fitted parameters, the residual is interpretable: it points at specific omitted mechanisms rather than being absorbed by calibration.
+
+---
+
+## 9. Why is the edge capped? Predictability vs. exploitability
+
+The central economic result is not that the signal loses money, but *why*, and the reason is structural, not a defect of the method.
+
+The gross edge is capped near 0.23 ticks per trade. It is worth being precise about what does and does not explain this cap:
+
+- **Not signal weakness.** The signal contains statistically significant directional information (at the highest threshold, roughly 42% of trades win, 49% are flat, 9% lose). But classification accuracy is not expected profit: what matters economically is `E[Δ price | signal]`, and that conditional expected move is small, because the mid moves in half-tick steps and the predictable component of the next move is a fraction of one.
+- **Not the horizon.** The edge-decay curve (§6) plateaus after ~5 states; imbalance predicts the immediate move, not sustained drift, so holding longer does not grow the edge.
+- **Not model underfit.** Richer models (logistic, gradient-boosted) might sharpen calibration marginally, but the depth Brier improvement was ~0.0005, nowhere near enough to turn 0.23 ticks into 1+.
+- **Market efficiency.** At the millisecond-to-few-updates horizon where market makers and colocated firms compete, a simple public imbalance rule earning more than the spread would not persist. The predictable part of the next move is, by construction, smaller than the cost to capture it.
+
+The takeaway: **queue imbalance contains statistically significant directional information, but the conditional expected price movement is small relative to transaction costs.** This illustrates the distinction between *statistical predictability* and *economic exploitability*: a signal can be genuinely predictive yet too small to trade as a taker after realistic costs. It also reframes imbalance not as a standalone strategy but as one feature in a richer microstructure model, and points at the real economic lever: execution (earning rather than paying the spread), not a larger raw edge.
+
+---
+
+## 10. Related work
+
+The relationship between queue imbalance and the direction of the next price move is already well established. In this project it serves as a benchmark rather than the main result: the goal is not to show that imbalance predicts price movement, but to compare that empirical relationship against a theoretical prediction from a queueing model, characterize what it omits, and test whether the signal survives execution.
+
+- **Gould & Bonart (2015)**: found that queue imbalance predicts short-horizon price direction in Nasdaq stocks, especially for large-tick instruments.
+- **Cont, Stoikov & Talreja (2010)**: modeled the limit order book as a queueing system and linked price moves to the depletion of bid and ask queues.
+- **Cont & de Larrard (2013)**: derived the diffusion-limit hitting-probability framework used here, expressing price-move probabilities in terms of queue sizes.
+
+---
+
+## 11. Limitations
 
 The analysis covers four MNQ sessions from late April to late May 2026. The curve is highly stable across those days, but they represent a relatively narrow sample of market conditions. This project does not test whether the same relationship holds during major macroeconomic announcements, periods of extreme volatility, prolonged market trends, or in instruments outside MNQ.
 
-The model is intentionally simple. It uses only the sizes of the best bid and best ask queues and assumes they evolve independently. Real order books are more complicated: order flow arrives in bursts, behavior changes throughout the trading day, and liquidity beyond the best level may also influence future price moves.
+The backtest models only the *taker* regime (crossing the spread). A maker strategy (posting passively to earn rather than pay the spread) faces adverse selection and is not evaluated here. The realized spread is taken from the reconstruction and not yet cross-checked against a reference BBO feed.
+
+Statistical caveats are handled by cross-day replication rather than row-level significance testing: consecutive states share labels and forward-return windows overlap, so the honest evidence for each finding is its consistency across the four independent held-out days, not a single large sample size.
 
 ---
 
-## 8. Future work
+## 12. Future work
 
-- **L10 depth.** This project uses only the best bid and ask, though the full ten levels of book depth were reconstructed and stored. The most interesting next question is whether deeper liquidity can explain the gap between the empirical curve and the theoretical prediction.
-- **Machine learning.** The current comparison is between the empirical curve and a structural queueing model. Another direction is to train logistic regression, gradient-boosted trees, or other models on imbalance and depth features and compare their performance against the theory.
-- **Why is the curve flatter?** The independent-queue model consistently predicts probabilities more extreme than those observed. Event-level queue correlations appear negligible, so the remaining gap may come from longer-timescale dependence, clustered order flow, or assumptions in the queueing model itself.
-- **More trading days.** Running the same pipeline across a larger sample would show whether the results remain stable across different market conditions.
+- **More data and regimes.** Extend from four sessions to months of data spanning different volatility regimes, to test robustness of the curve, the depth signal, and the execution conclusion.
+- **Competing signals.** The signals tested here are built from *resting* book state. The genuinely different, untested class is *aggressive* flow: order-flow imbalance (OFI), trade/aggressor volume, and queue depletion rate, which requires recording the trade events the current pipeline discards. Compare these against L1 imbalance as competing hypotheses.
+- **Flexible models.** Compare the empirical lookup against logistic regression, gradient-boosted trees, or sequence models out-of-sample, with feature importance: a smoother model may find structure the sparse buckets miss.
+- **Why is the curve flatter?** Event-level queue correlation is ≈0 and depth does not explain the gap; the remaining candidates (clustered/self-exciting arrivals, non-stationary intensities, non-Markovian state) are each a testable experiment (e.g. longer-timescale correlation, time-bucketed arrival rates).
+- **Maker execution.** Model passive posting with queue position and adverse selection, to test whether the signal that fails as a taker could be viable as a maker.
+- **Spread verification.** Cross-check the reconstructed ~2-tick MNQ spread against a reference BBO feed.
