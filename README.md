@@ -6,7 +6,7 @@ A fundamental question in market microstructure is how the distribution of liqui
 
 `P(up before down | book state)` is the probability that the mid-price ticks up before it ticks down, given the current order-book state. This is the object studied throughout: first as a prediction problem, then as a trading signal.
 
-The framing is deliberately a *research* question ("does imbalance carry economically exploitable information?"), not a claim to a profitable strategy. The honest answer found here is: the signal is real, statistically robust, and persistent, but does **not** survive realistic taker execution costs by a wide margin.
+The framing is deliberately a *research* question ("does imbalance carry economically exploitable information?"), not a claim to a profitable strategy. The honest answer found here is: the signal is real, statistically robust, and consistently reproducible across sessions, but does **not** survive realistic taker execution costs by a wide margin.
 
 ---
 
@@ -14,7 +14,7 @@ The framing is deliberately a *research* question ("does imbalance carry economi
 
 **Takeaway:** Queue imbalance carries real, stable, out-of-sample directional information in MNQ. A parameter-free queueing (PDE) model captures its shape but systematically overstates confidence. Deeper book liquidity adds independent predictive value but does not explain that gap. The signal's edge is realized within ~5–10 book updates and amounts to 0.13–0.23 ticks per trade, which does **not** survive the ~1.8-tick round-trip spread cost. The information is genuine but not economically exploitable by crossing the spread.
 
-The eight linked findings, each motivating the next:
+The project proceeds through eight connected findings:
 1. **Reconstruction**: full L3 book rebuilt from 100M+ MBO events; 46.7M-record session validated with zero anomalies.
 2. **Empirical curve**: the imbalance→direction relationship, reproduced on CME futures.
 3. **Multi-day stability**: that curve is stable across four sessions (per-bin std < 0.011).
@@ -64,6 +64,9 @@ edge_decay.py       Signal persistence vs holding horizon
 backtest_stage1.py  Gross directional value (threshold sweep, no costs)
 backtest_stage2.py  Net of spread cost; break-even transaction cost
 thickness_test.py   Total book volume (thickness) conditioning test (null)
+trend_filter.py     Trend-confirmation filter on the imbalance signal
+realtime_strict.py  Strict per-state entry gates (imbalance + trend + volume)
+persistence_exit.py Signal-persistence exit (hold while criteria hold)
 figures/            Project figures
 ```
 
@@ -254,6 +257,8 @@ A threshold-swept, non-overlapping, leave-one-day-out backtest was run at the 5-
 **Break-even transaction cost.** The strategy's break-even round-trip cost equals its gross edge: 0.13–0.23 ticks. Since a taker pays at minimum ~1 tick (in the 17% of states with a one-tick book) and ~1.8 ticks typically, the signal does **not** survive realistic taker execution costs, by roughly an order of magnitude, under any plausible spread assumption. The information is genuine and statistically robust but not economically exploitable by crossing the spread.
 
 *(Caveat: the ~2-tick spread is taken from the reconstruction; confirming it against a reference BBO feed is a loose end. The economic conclusion holds under any spread ≥ 1 tick, so it does not depend on the exact figure.)*
+
+**Selectivity and exit design do not close the gap.** Additional experiments tested increasingly selective entry rules (confidence thresholds, trend confirmation, volume conditioning) and a persistence-based exit, to determine whether the negative result reflected poor trade selection rather than the signal itself. Trend confirmation improved the gross edge to ~0.37 ticks/trade (win rate ~36% to ~59%), while volume conditioning provided no benefit. The persistence exit showed the signal has little exploitable continuation (mean confirmed hold ~1.4 book updates). Even the most selective configurations remained far below the ~1.8-tick round-trip cost, indicating the limitation is structural rather than a consequence of the particular entry or exit rule.
 
 ---
 
