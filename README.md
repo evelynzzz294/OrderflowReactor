@@ -4,9 +4,9 @@
 
 A fundamental question in market microstructure is how the distribution of liquidity in the limit order book influences the direction of the next price move, and whether any resulting predictive signal survives realistic execution costs. This project reconstructs the CME MNQ order book from event-level market-by-order data, measures the relationship between queue imbalance and future price movements, tests it against a parameter-free queueing-theoretic prediction, investigates whether deeper book liquidity explains the residual, measures how long the signal persists, and finally evaluates whether it can be monetized after crossing the spread.
 
-`P(up before down | book state)` is the probability that the mid-price ticks up before it ticks down, given the current order-book state. This is the object studied throughout: first as a prediction problem, then as a trading signal.
+`P(up before down | book state)` is the probability that the mid-price ticks up before it ticks down, given the current order-book state. This is the object studied throughout.
 
-The framing is deliberately a *research* question ("does imbalance carry economically exploitable information?"), not a claim to a profitable strategy. The honest answer found here is: the signal is real, statistically robust, and consistently reproducible across sessions, but does **not** survive realistic taker execution costs by a wide margin.
+This project asks whether queue imbalance contains predictive information that can be translated into a profitable trading signal. The results show a stable, reproducible relationship between imbalance and short-horizon price direction, but the resulting edge is too small to overcome taker execution costs.
 
 ---
 
